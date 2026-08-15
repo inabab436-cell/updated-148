@@ -2000,6 +2000,18 @@ export const Route = createFileRoute("/api/chat-ai")({
               `already_deducted_for_this_line: ${alreadyDeductedForSelectionQty}\n` +
               "rule: the stock numbers in the snapshot are AFTER these pieces were removed. If the customer states a NEW TOTAL for this same line, only (new_total − already_deducted) has to be available. Example: total 2, already deducted 1, stock now 1 → the increase IS possible; accept it and call create_order with the new total (the system deducts only the difference). Never tell the customer the quantity is unavailable because the total is bigger than the current stock."
             : "";
+          let existingOrderAdditionCapacityBlock = "";
+          try {
+            const { buildExistingOrderAdditionCapacityBlock } = await import(
+              "@/lib/order-availability"
+            );
+            existingOrderAdditionCapacityBlock = buildExistingOrderAdditionCapacityBlock(
+              merchantData.products as any,
+              conversationOrderRows as any,
+            );
+          } catch (e) {
+            console.error("[chat-ai] existing-order addition capacity skipped");
+          }
           if (!orderState.order_placed) {
             try {
               const { checkSelectionAvailability, buildLiveAvailabilityBlock } = await import("@/lib/order-availability");
@@ -2159,6 +2171,7 @@ export const Route = createFileRoute("/api/chat-ai")({
             matchedProductBlock +
             liveAvailabilityBlock +
             alreadyDeductedBlock +
+             existingOrderAdditionCapacityBlock +
             buildSuggestableOptionsBlock(merchantData.products as any, matchedProductId);
           let freshStoreSnapshot = buildFreshStoreSnapshot();
 

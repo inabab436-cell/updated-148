@@ -65,6 +65,70 @@ export interface AvailabilityOptions {
   alreadyDeducted?: number;
 }
 
+interface ExistingOrderRow {
+  status?: string | null;
+  items?: unknown;
+  stock_deducted?: unknown;
+}
+
+/**
+ * Gives the model explicit arithmetic for lines that are already present in a
+ * stock-deducted order. Live inventory is the REMAINDER, so it is also exactly
+ * how many extra pieces may be added; it must not be compared with the updated
+ * line total. Keeping the numbers pre-computed prevents the model from
+ * subtracting the existing order a second time.
+ */
+export function buildExistingOrderAdditionCapacityBlock(
+  products: AvailabilityProduct[],
+  orders: ExistingOrderRow[],
+): string {
+  const lines: string[] = [];
+
+  for (const order of orders ?? []) {
+    const items = Array.isArray(order.items)
+      ? (order.items as Array<Record<string, unknown>>)
+      : [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const existingRaw = Number(item.quantity ?? 0);
+      const existing = Number.isFinite(existingRaw) && existingRaw > 0
+        ? Math.floor(existingRaw)
+        : 0;
+      if (!existing) continue;
+
+      const selection: AvailabilitySelection = {
+        product_name: typeof item.product_name === "string" ? item.product_name : null,
+        color: typeof item.color === "string" ? item.color : null,
+        size: typeof item.size === "string" ? item.size : null,
+        quantity: existing,
+      };
+      const verdict = checkSelectionAvailability(products, selection, {
+        alreadyDeducted: existing,
+      });
+      if (verdict.status !== "ok" || verdict.available == null) continue;
+
+      const label = [selection.product_name, selection.color, selection.size]
+        .filter(Boolean)
+        .join(" | ");
+      lines.push(
+        `line: ${label}`,
+        `quantity_already_in_order: ${existing}`,
+        `extra_pieces_available_now: ${verdict.available}`,
+        `maximum_valid_new_total: ${existing + verdict.available}`,
+        `decision: adding any quantity from 1 through ${verdict.available} is AVAILABLE; for example, adding 1 means send new total ${existing + 1}, while only 1 leaves stock.`,
+        "---",
+      );
+    }
+  }
+
+  if (!lines.length) return "";
+  return [
+    "\n\n[EXISTING ORDER ADDITION CAPACITY — deterministic arithmetic; never quote this heading.]",
+    "The inventory already excludes quantity_already_in_order. Judge an addition only against extra_pieces_available_now, never compare maximum/new total with live stock.",
+    ...lines,
+  ].join("\n");
+}
+
 /**
  * Render the deterministic result of the live variant check for the model.
  * This is deliberately generated from stock numbers, not from wording in the
