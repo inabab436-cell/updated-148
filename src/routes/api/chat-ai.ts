@@ -1981,11 +1981,17 @@ export const Route = createFileRoute("/api/chat-ai")({
           // the agent refused "خليهم 2" (total 2, 1 already deducted, 1 left).
           let alreadyDeductedForSelectionQty = 0;
           try {
+            const { canonicalizeOrderItems } = await import("@/lib/order-catalog-match");
             const { alreadyDeductedForSelection } = await import(
               "@/lib/order-quantity-delta"
             );
+            const rawSelection = selectionFromOrderState(orderState);
+            const canonicalSelection = canonicalizeOrderItems(
+              merchantData.products as any,
+              [rawSelection as any],
+            )[0] ?? rawSelection;
             alreadyDeductedForSelectionQty = alreadyDeductedForSelection(
-              selectionFromOrderState(orderState) as any,
+              canonicalSelection as any,
               conversationOrderRows as any,
             );
           } catch (e) {
