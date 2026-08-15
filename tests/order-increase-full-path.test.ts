@@ -76,7 +76,8 @@ describe("increase quantity on an existing order — full path", () => {
     const existing = [storedOrder(1)];
 
     expect(canonicalSelection?.product_name).toBe("IKE BRAS هودي مخطط");
-    expect(subtractAlreadyDeducted([canonicalSelection!] as any, existing as any).items[0]?.quantity).toBe(1);
+    if (!canonicalSelection) throw new Error("Expected canonical selection");
+    expect(subtractAlreadyDeducted([canonicalSelection] as any, existing as any).items[0]?.quantity).toBe(1);
   });
 
   it("updates the existing order atomically instead of inserting a second order", () => {
