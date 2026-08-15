@@ -2512,9 +2512,19 @@ export const Route = createFileRoute("/api/chat-ai")({
                 const { subtractAlreadyDeducted } = await import(
                   "@/lib/order-quantity-delta"
                 );
+                const { canonicalizeOrderItems: canonicalizeStored } = await import(
+                  "@/lib/order-catalog-match"
+                );
+                const canonicalDeductedRows = (deductedRows as any[]).map((row) => ({
+                  ...row,
+                  items: canonicalizeStored(
+                    merchantData.products as any,
+                    (Array.isArray(row.items) ? row.items : []) as any,
+                  ),
+                }));
                 const delta = subtractAlreadyDeducted(
                   cleanedItems,
-                  deductedRows as any,
+                  canonicalDeductedRows as any,
                 );
                 quantityAdjustments = delta.adjustments as any;
                 if (delta.allAlreadyDeducted) {
