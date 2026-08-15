@@ -1992,7 +1992,15 @@ export const Route = createFileRoute("/api/chat-ai")({
             )[0] ?? rawSelection;
             alreadyDeductedForSelectionQty = alreadyDeductedForSelection(
               canonicalSelection as any,
-              conversationOrderRows as any,
+              // Stored lines are canonicalized too, so both sides carry
+              // product ids and the pairing is identity-based, not name-based.
+              (conversationOrderRows as any[]).map((row) => ({
+                ...row,
+                items: canonicalizeOrderItems(
+                  merchantData.products as any,
+                  (Array.isArray(row.items) ? row.items : []) as any,
+                ),
+              })) as any,
             );
           } catch (e) {
             console.error("[chat-ai] already-deducted credit skipped");
@@ -2504,9 +2512,19 @@ export const Route = createFileRoute("/api/chat-ai")({
                 const { subtractAlreadyDeducted } = await import(
                   "@/lib/order-quantity-delta"
                 );
+                const { canonicalizeOrderItems: canonicalizeStored } = await import(
+                  "@/lib/order-catalog-match"
+                );
+                const canonicalDeductedRows = (deductedRows as any[]).map((row) => ({
+                  ...row,
+                  items: canonicalizeStored(
+                    merchantData.products as any,
+                    (Array.isArray(row.items) ? row.items : []) as any,
+                  ),
+                }));
                 const delta = subtractAlreadyDeducted(
                   cleanedItems,
-                  deductedRows as any,
+                  canonicalDeductedRows as any,
                 );
                 quantityAdjustments = delta.adjustments as any;
                 if (delta.allAlreadyDeducted) {

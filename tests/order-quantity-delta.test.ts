@@ -53,3 +53,45 @@ describe("subtractAlreadyDeducted", () => {
     expect(res.adjustments).toHaveLength(0);
   });
 });
+
+describe("identity-based pairing", () => {
+  it("pairs by variant_id even when the names differ", () => {
+    const stored = {
+      status: "new",
+      items: [{ product_id: "p1", variant_id: "v9", product_name: "اسم قديم", quantity: 1 }],
+      stock_deducted: [{ variant_id: "v9", quantity: 1 }],
+    };
+    const res = subtractAlreadyDeducted(
+      [{ product_id: "p1", variant_id: "v9", product_name: "اسم مختلف تماما", quantity: 2 }],
+      [stored],
+    );
+    expect(res.items[0]!.quantity).toBe(1);
+  });
+
+  it("pairs by product_id + variant attributes, ignoring the written name", () => {
+    const stored = {
+      status: "new",
+      items: [{ product_id: "p1", product_name: "IKE BRAS هودي مخطط", color: "ابيض", size: "L", quantity: 1 }],
+      stock_deducted: [{ variant_id: "v1", quantity: 1 }],
+    };
+    const res = subtractAlreadyDeducted(
+      [{ product_id: "p1", product_name: "هودي مخطط", color: "أبيض", size: "L", quantity: 2 }],
+      [stored],
+    );
+    expect(res.items[0]!.quantity).toBe(1);
+  });
+
+  it("never credits a different product id that shares a similar name", () => {
+    const stored = {
+      status: "new",
+      items: [{ product_id: "p2", product_name: "هودي مخطط", quantity: 1 }],
+      stock_deducted: [{ variant_id: "v2", quantity: 1 }],
+    };
+    const res = subtractAlreadyDeducted(
+      [{ product_id: "p1", product_name: "هودي مخطط", quantity: 2 }],
+      [stored],
+    );
+    expect(res.items[0]!.quantity).toBe(2);
+    expect(res.adjustments).toHaveLength(0);
+  });
+});
