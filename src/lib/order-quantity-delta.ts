@@ -119,10 +119,8 @@ function linesPair(stored: LinePart, requested: LinePart): boolean {
   const sameProduct =
     stored.productId && requested.productId
       ? stored.productId === requested.productId
-      : // 3. Legacy rows without ids: normalized name comparison.
-        !stored.productId &&
-        !requested.productId &&
-        stored.product === requested.product;
+      : // 3. One side has no id (legacy row): normalized name comparison.
+        stored.product !== "" && stored.product === requested.product;
   return (
     Boolean(sameProduct) &&
     storedAttributeMatchesRequest(stored.color, requested.color) &&
