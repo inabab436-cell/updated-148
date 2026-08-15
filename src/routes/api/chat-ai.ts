@@ -429,11 +429,6 @@ async function extractProfileFieldsWithAI(
         tools: [tool],
         tool_choice: { type: "function", function: { name: "extract_contact_fields" } },
       }),
-      // This helper pass is fail-open (an empty result only skips the
-      // extraction). Without a cap a stalled upstream held the whole reply for
-      // as long as it wanted — a 90s gateway stall was observed on this exact
-      // model — so the customer waited minutes for a simple answer.
-      signal: AbortSignal.timeout(12_000),
     });
     if (!res.ok) return {};
     const json = await res.json();
@@ -2028,6 +2023,7 @@ export const Route = createFileRoute("/api/chat-ai")({
           }
           if (!orderState.order_placed) {
             try {
+              const { canonicalizeOrderItems } = await import("@/lib/order-catalog-match");
               const { checkSelectionAvailability, buildLiveAvailabilityBlock } = await import("@/lib/order-availability");
               const canonicalSelection = canonicalizeOrderItems(
                 merchantData.products as any,
@@ -3302,7 +3298,6 @@ export const Route = createFileRoute("/api/chat-ai")({
                   messages: aiMessages,
                   tools: [createOrderTool, requestHandoffTool, reportMissingInfoTool, recallEarlierConversationTool, attachProductMediaTool, calculateOfferPriceTool],
                 }),
-                signal: AbortSignal.timeout(45_000),
               });
             } catch (e) {
               console.error("[chat-ai] AI gateway request aborted/failed", e);
@@ -3566,7 +3561,6 @@ export const Route = createFileRoute("/api/chat-ai")({
                     model: "google/gemini-2.5-flash",
                     messages: aiMessages,
                   }),
-                  signal: AbortSignal.timeout(30_000),
                 });
                 if (res.ok) {
                   const j = await res.json();
