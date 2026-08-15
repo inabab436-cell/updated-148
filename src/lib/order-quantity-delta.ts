@@ -12,8 +12,14 @@
  *     delta = requested_total - already_deducted_for_the_same_line
  *
  * It is a pure numeric reconciliation — no keyword matching, no intent
- * detection. Lines are paired by product name + colour + size, normalized the
- * same way the rest of the order pipeline normalizes them.
+ * detection. Lines are paired by STABLE IDENTITY first:
+ *   1. `variant_id` when both sides carry one (exact physical stock row),
+ *   2. `product_id` + colour/size when both sides carry a product id,
+ *   3. only as a last resort (legacy rows with no ids) the normalized
+ *      product name + colour + size.
+ * Call sites canonicalize both the requested line and the stored order lines
+ * against the catalogue first, so ids are present on both sides in practice
+ * and the name path is never the deciding factor.
  *
  * Only orders whose stock was ACTUALLY deducted count (a non-empty
  * `stock_deducted` array and a non-cancelled status). An order still waiting
@@ -28,6 +34,8 @@ export interface DeductedOrderRow {
 }
 
 export interface DeltaItem {
+  product_id?: string | null;
+  variant_id?: string | null;
   product_name?: string | null;
   color?: string | null;
   size?: string | null;
@@ -62,13 +70,28 @@ function norm(v: unknown): string {
 }
 
 interface LinePart {
+  productId: string;
+  variantId: string;
   product: string;
   color: string;
   size: string;
 }
 
-function lineParts(item: { product_name?: unknown; color?: unknown; size?: unknown }): LinePart {
+function idOf(v: unknown): string {
+  const s = String(v ?? "").trim();
+  return s.toLowerCase();
+}
+
+function lineParts(item: {
+  product_id?: unknown;
+  variant_id?: unknown;
+  product_name?: unknown;
+  color?: unknown;
+  size?: unknown;
+}): LinePart {
   return {
+    productId: idOf(item.product_id),
+    variantId: idOf(item.variant_id),
     product: norm(item.product_name),
     color: norm(item.color),
     size: norm(item.size),
@@ -88,8 +111,20 @@ function storedAttributeMatchesRequest(stored: string, requested: string): boole
 }
 
 function linesPair(stored: LinePart, requested: LinePart): boolean {
+  // 1. Same physical variant row — unambiguous, nothing else is consulted.
+  if (stored.variantId && requested.variantId) {
+    return stored.variantId === requested.variantId;
+  }
+  // 2. Same product by id; colour/size still guard different variants.
+  const sameProduct =
+    stored.productId && requested.productId
+      ? stored.productId === requested.productId
+      : // 3. Legacy rows without ids: normalized name comparison.
+        !stored.productId &&
+        !requested.productId &&
+        stored.product === requested.product;
   return (
-    stored.product === requested.product &&
+    Boolean(sameProduct) &&
     storedAttributeMatchesRequest(stored.color, requested.color) &&
     storedAttributeMatchesRequest(stored.size, requested.size)
   );
