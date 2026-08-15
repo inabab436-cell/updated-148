@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { checkSelectionAvailability, buildLiveAvailabilityBlock } from "@/lib/order-availability";
+import {
+  buildExistingOrderAdditionCapacityBlock,
+  buildLiveAvailabilityBlock,
+  checkSelectionAvailability,
+} from "@/lib/order-availability";
 import { alreadyDeductedForSelection } from "@/lib/order-quantity-delta";
 
 const products = [
@@ -33,5 +37,13 @@ describe("availability with already-deducted credit", () => {
 
   it("unchanged behaviour without credit", () => {
     expect(checkSelectionAvailability(products as any, selection).status).toBe("insufficient_quantity");
+  });
+
+  it("states the exact extra capacity and valid new total for an existing order", () => {
+    const block = buildExistingOrderAdditionCapacityBlock(products as any, orders as any);
+    expect(block).toContain("quantity_already_in_order: 1");
+    expect(block).toContain("extra_pieces_available_now: 1");
+    expect(block).toContain("maximum_valid_new_total: 2");
+    expect(block).toContain("adding any quantity from 1 through 1 is AVAILABLE");
   });
 });

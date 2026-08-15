@@ -70,6 +70,16 @@ describe("increase quantity on an existing order — full path", () => {
     expect(canon).toBeLessThan(delta);
   });
 
+  it("canonicalizes the pre-check selection before crediting existing stock", () => {
+    const rawSelection = agentLine(2);
+    const canonicalSelection = canonicalizeOrderItems(products as any, [rawSelection])[0];
+    const existing = [storedOrder(1)];
+
+    expect(canonicalSelection?.product_name).toBe("IKE BRAS هودي مخطط");
+    if (!canonicalSelection) throw new Error("Expected canonical selection");
+    expect(subtractAlreadyDeducted([canonicalSelection] as any, existing as any).items[0]?.quantity).toBe(1);
+  });
+
   it("updates the existing order atomically instead of inserting a second order", () => {
     const src = readFileSync("src/routes/api/chat-ai.ts", "utf8");
     expect(src).toContain('supabase.rpc("update_order_with_stock"');
