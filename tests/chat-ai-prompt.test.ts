@@ -66,6 +66,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("create_order");
     expect(prompt).toContain("request_handoff");
     expect(prompt).toMatch(/Never mention that you are AI/);
+    expect(prompt).toContain("that approval remains valid");
+    expect(prompt).toContain('repeat "تمام"');
   });
 });
 
