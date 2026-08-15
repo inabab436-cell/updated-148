@@ -429,11 +429,6 @@ async function extractProfileFieldsWithAI(
         tools: [tool],
         tool_choice: { type: "function", function: { name: "extract_contact_fields" } },
       }),
-      // This helper pass is fail-open (an empty result only skips the
-      // extraction). Without a cap a stalled upstream held the whole reply for
-      // as long as it wanted — a 90s gateway stall was observed on this exact
-      // model — so the customer waited minutes for a simple answer.
-      signal: AbortSignal.timeout(12_000),
     });
     if (!res.ok) return {};
     const json = await res.json();
@@ -2028,10 +2023,15 @@ export const Route = createFileRoute("/api/chat-ai")({
           }
           if (!orderState.order_placed) {
             try {
+              const { canonicalizeOrderItems } = await import("@/lib/order-catalog-match");
               const { checkSelectionAvailability, buildLiveAvailabilityBlock } = await import("@/lib/order-availability");
+              const canonicalSelection = canonicalizeOrderItems(
+                merchantData.products as any,
+                [selectionFromOrderState(orderState) as any],
+              )[0] ?? selectionFromOrderState(orderState);
               const verdict = checkSelectionAvailability(
                 merchantData.products as any,
-                selectionFromOrderState(orderState),
+                canonicalSelection,
                 { alreadyDeducted: alreadyDeductedForSelectionQty },
               );
               liveAvailabilityBlock = buildLiveAvailabilityBlock(verdict);
@@ -2731,7 +2731,12 @@ export const Route = createFileRoute("/api/chat-ai")({
               }
               console.error("[chat-ai] create_order insert failed", msg);
               return {
-                result: { ok: false, error: "db_insert_failed", message: "The order could not be saved due to a system error. Apologize to the customer and ask them to try again. Do NOT provide any order number." },
+                result: {
+                  ok: false,
+                  error: "db_insert_failed",
+                  message:
+                    "The order could not be saved. The customer's existing approval remains valid. Do NOT ask the customer to confirm again, do NOT ask them to repeat any phrase, and do NOT mention a system/tool/error. Tell them naturally that you already have their approval and details and will review the registration now. Do NOT provide any order number.",
+                },
                 createdOrderNumber: null,
               };
             }
@@ -3268,6 +3273,7 @@ export const Route = createFileRoute("/api/chat-ai")({
           let needsHumanNow = false;
           let handoffReason: string | null = null;
           let missingInfoRecorded = false;
+          let orderFailureReply: string | null = null;
 
 
           const MAX_TOOL_ITERATIONS = 4;
@@ -3292,7 +3298,6 @@ export const Route = createFileRoute("/api/chat-ai")({
                   messages: aiMessages,
                   tools: [createOrderTool, requestHandoffTool, reportMissingInfoTool, recallEarlierConversationTool, attachProductMediaTool, calculateOfferPriceTool],
                 }),
-                signal: AbortSignal.timeout(45_000),
               });
             } catch (e) {
               console.error("[chat-ai] AI gateway request aborted/failed", e);
@@ -3365,6 +3370,21 @@ export const Route = createFileRoute("/api/chat-ai")({
                   orderConfirmationMessage = String((r.result as any).confirmation_message);
                 }
                 if (r.manualHandover) needsHumanNow = true;
+                if (!r.createdOrderNumber && (r.result as any)?.error === "insufficient_stock") {
+                  const { buildInsufficientStockReply } = await import(
+                    "@/lib/order-tool-replies"
+                  );
+                  orderFailureReply = buildInsufficientStockReply(
+                    Array.isArray((r.result as any)?.shortages)
+                      ? (r.result as any).shortages
+                      : [],
+                  );
+                } else if (!r.createdOrderNumber && (r.result as any)?.error === "db_insert_failed") {
+                  const { ORDER_SAVE_REVIEW_REPLY } = await import(
+                    "@/lib/order-tool-replies"
+                  );
+                  orderFailureReply = ORDER_SAVE_REVIEW_REPLY;
+                }
 
               } else if (fnName === "request_handoff") {
                 const r = await executeRequestHandoff(rawArgs);
@@ -3413,6 +3433,14 @@ export const Route = createFileRoute("/api/chat-ai")({
             // tool_calls / tool results were appended, so every new model
             // invocation sees it as the most recent authoritative context.
             pinSnapshotLast(aiMessages, freshStoreSnapshot);
+          }
+
+          // Order outcomes that are already decided by deterministic code do
+          // not need a model-authored interpretation. In particular, a save
+          // failure must never turn the customer's valid approval into a loop
+          // asking them to say a magic confirmation phrase again.
+          if (!createdOrderNumber && orderFailureReply) {
+            reply = orderFailureReply;
           }
 
           // A model response can never overrule structural phone validation.
@@ -3533,7 +3561,6 @@ export const Route = createFileRoute("/api/chat-ai")({
                     model: "google/gemini-2.5-flash",
                     messages: aiMessages,
                   }),
-                  signal: AbortSignal.timeout(30_000),
                 });
                 if (res.ok) {
                   const j = await res.json();
