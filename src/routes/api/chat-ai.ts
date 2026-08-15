@@ -1992,7 +1992,15 @@ export const Route = createFileRoute("/api/chat-ai")({
             )[0] ?? rawSelection;
             alreadyDeductedForSelectionQty = alreadyDeductedForSelection(
               canonicalSelection as any,
-              conversationOrderRows as any,
+              // Stored lines are canonicalized too, so both sides carry
+              // product ids and the pairing is identity-based, not name-based.
+              (conversationOrderRows as any[]).map((row) => ({
+                ...row,
+                items: canonicalizeOrderItems(
+                  merchantData.products as any,
+                  (Array.isArray(row.items) ? row.items : []) as any,
+                ),
+              })) as any,
             );
           } catch (e) {
             console.error("[chat-ai] already-deducted credit skipped");
